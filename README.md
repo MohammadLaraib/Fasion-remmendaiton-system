@@ -1,102 +1,100 @@
 # Fasion-remmendaiton-system
-Here’s a concise README file you can use for your fashion recommendation system:
 
----
+import torch
+import torchvision.transforms as transforms
+import torchvision.models as models
+from PIL import Image
+import matplotlib.pyplot as plt
+from sklearn.metrics.pairwise import cosine_similarity
+import zipfile
+import os
+import requests
+from io import BytesIO
 
-# Fashion Recommendation System
+# Download and extract fashion dataset
+def download_and_extract_dataset():
+    dataset_url = "https://huggingface.co/datasets/0xJarvis/fashion-sample-dataset/resolve/main/fashion_data.zip"
+    local_zip = "fashion_data.zip"
+    if not os.path.exists("fashion_data"):
+        print("Downloading sample fashion dataset...")
+        response = requests.get(dataset_url)
+        if response.status_code == 200:
+            with open(local_zip, "wb") as f:
+                f.write(response.content)
+            with zipfile.ZipFile(local_zip, 'r') as zip_ref:
+                zip_ref.extractall("fashion_data")
+            print("Dataset downloaded and extracted successfully.")
+        else:
+            print("Failed to download dataset. Please check the link.")
+    else:
+        print("Dataset already exists, skipping download.")
 
-This repository contains a fashion recommendation system that uses machine learning techniques to recommend similar fashion images based on a user's input image. The system extracts features from images using a pre-trained model (ResNet50 or Vision Transformer (ViT)) and compares them using cosine similarity to provide recommendations.
-
-## Features
-- Downloads a sample fashion dataset from an online source.
-- Uses a pre-trained model (ResNet50 or Vision Transformer (ViT)) for feature extraction.
-- Finds the top-k most similar images from the dataset based on the input image.
-- Displays the input image alongside the top recommended images.
-
-## Prerequisites
-
-- Python 3.x
-- PyTorch
-- torchvision
-- matplotlib
-- scikit-learn
-- PIL (Pillow)
-- requests
-
-To install the required dependencies, run:
-
-```bash
-pip install torch torchvision matplotlib scikit-learn pillow requests
-```
-
-## How to Use
-
-### Step 1: Download the Fashion Dataset
-The fashion dataset is automatically downloaded when you run the script. It contains fashion images that the system will use to compare with the user input.
-
-### Step 2: Provide Your Image
-- Upload an image of fashion (clothing) to be used as a query image for recommendations.
-- Change the `user_img_path` in the script to the path of your image.
-
-```python
-user_img_path = "/path/to/your/image.jpg"
-```
-
-### Step 3: Run the Script
-Execute the script. The system will:
-1. Download the fashion dataset if it doesn't exist.
-2. Extract features from the dataset and the user's input image.
-3. Find the top-3 most similar fashion images based on the extracted features.
-4. Display the input image along with the recommended images.
-
-Run the script using:
-
-```bash
-python fashion_recommendation_system.py
-```
-
-### Output
-- The system will display the query image and the top-k recommendations side by side.
-
-### Example Output:
-```plaintext
-Loading dataset and extracting features...
-Finding similar fashion recommendations...
-```
-
-The recommended images will appear in a window, with the input image on the left and the recommended images on the right.
-
-## Customization
-
-- **Changing the number of recommendations**: You can change the number of recommendations by modifying the `top_k` parameter in the `recommend_images` function:
-  
-```python
-recommendations = recommend_images(user_feature, features, image_paths, top_k=5)
-```
-
-- **Model selection**: You can choose between ResNet50 and ViT (Vision Transformer) for feature extraction by adjusting the model loading line:
-
-```python
-# For ResNet50
+# Load ResNet50 model
 model = models.resnet50(weights=models.ResNet50_Weights.DEFAULT)
+model.eval()
 
-# For Vision Transformer (ViT)
-model = models.vit_b_16(weights=models.ViT_B_16_Weights.DEFAULT)
-```
+# Transformation for image preprocessing
+transform = transforms.Compose([
+    transforms.Resize((224, 224)),
+    transforms.ToTensor(),
+    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])  # Standard normalization
+])
 
-## Troubleshooting
+# Feature extraction from ResNet50
+def extract_features(img_path):
+    img = Image.open(img_path).convert('RGB')
+    img = transform(img).unsqueeze(0)
+    with torch.no_grad():
+        features = model(img)
+    return features.squeeze().numpy()
 
-- If the dataset fails to download, check your internet connection or verify the dataset URL.
-- If the recommendations are not relevant, ensure the dataset contains sufficient variety. Consider uploading a more diverse set of fashion images.
+# Load dataset
+def load_dataset(folder_path):
+    paths = []
+    features = []
+    for file in os.listdir(folder_path):
+        if file.lower().endswith(('.jpg', '.jpeg', '.png')):
+            img_path = os.path.join(folder_path, file)
+            paths.append(img_path)
+            features.append(extract_features(img_path))
+    return paths, features
 
-## License
+# Recommend similar images
+def recommend_images(query_feature, dataset_features, dataset_paths, top_k=3):
+    sims = cosine_similarity([query_feature], dataset_features)[0]
+    indices = sims.argsort()[-top_k:][::-1]
+    return [dataset_paths[i] for i in indices]
 
-This project is licensed under the MIT License.
+# Show recommendations
+def show_results(input_img_path, recommended_paths):
+    imgs = [Image.open(input_img_path).convert('RGB')] + [Image.open(p).convert('RGB') for p in recommended_paths]
+    titles = ["User Input"] + [f"Recommendation {i+1}" for i in range(len(recommended_paths))]
 
-## Acknowledgements
-- Pretrained models were sourced from the `torchvision` library.
-- The dataset is provided by the HuggingFace repository.
+    plt.figure(figsize=(15, 5))
+    for i, (img, title) in enumerate(zip(imgs, titles)):
+        plt.subplot(1, len(imgs), i+1)
+        plt.imshow(img)
+        plt.title(title)
+        plt.axis('off')
+    plt.tight_layout()
+    plt.show()
 
----
+# Main function
+if __name__ == "__main__":
+    download_and_extract_dataset()
 
-Feel free to adjust the README based on any further changes you make to the code or project structure!
+    dataset_dir = "fashion_data"  # Dataset folder
+    user_img_path = "/content/user 3.jpg"  # <-- Your uploaded user image path
+
+    print("Loading dataset and extracting features...")
+    image_paths, features = load_dataset(dataset_dir)
+
+    if len(image_paths) < 4:
+        print("Not enough images in dataset! Please upload more fashion images.")
+    else:
+        print("Finding similar fashion recommendations...")
+        user_feature = extract_features(user_img_path)
+        recommendations = recommend_images(user_feature, features, image_paths, top_k=3)
+        show_results(user_img_path, recommendations)
+
+
